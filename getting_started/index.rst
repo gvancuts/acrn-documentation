@@ -45,16 +45,16 @@ need to setup a base Clear Linux OS to bootstrap ACRN on the NUC. You'll
 need a network connection for your NUC to complete this setup.
 
 .. note::
-   ACRN requires Clear Linux version 21260 or newer. The instructions below
-   have been validated with version 21260 and need some adjustment to work
+   ACRN requires Clear Linux version 22140 or newer. The instructions below
+   have been validated with version 22140 and need some adjustment to work
    with newer versions. You will see a note when the instruction needs to be
    adjusted.
 
 1. Follow this `Clear Linux installation guide
    <https://clearlinux.org/documentation/clear-linux/get-started/bare-metal-install>`__
    as a starting point for installing Clear Linux onto your NUC. Download the
-   ``clear-21260-installer.img.xz`` from the https://download.clearlinux.org/releases/21260/clear/
-   folder to get Clear Linux version 21260.
+   ``clear-22140-installer.img.xz`` from the https://download.clearlinux.org/releases/22140/clear/
+   folder to get Clear Linux version 22140.
 
 2. At the "Choose Installation Type" screen, choose the "< Automatic >"
    option. This will install the minimum Clear Linux components.
@@ -128,9 +128,9 @@ partition. Follow these steps:
 
       # ls -1 /mnt/EFI/org.clearlinux
       bootloaderx64.efi
-      kernel-org.clearlinux.native.4.15.7-536
-      kernel-org.clearlinux.pk414-sos.4.14.23-19
-      kernel-org.clearlinux.pk414-standard.4.14.23-19
+      kernel-org.clearlinux.native.4.16.5-558
+      kernel-org.clearlinux.pk414-sos.4.14.34-27
+      kernel-org.clearlinux.pk414-standard.4.14.34-27
       loaderx64.efi
 
    .. note::
@@ -143,18 +143,32 @@ partition. Follow these steps:
 
    .. code-block:: none
 
-      # cp /usr/share/acrn/acrn.efi /mnt/EFI/org.clearlinux
+      # mkdir /mnt/EFI/acrn
+      # cp /usr/share/acrn/acrn.efi /mnt/EFI/acrn/
 
-#. Create a boot entry for ACRN. It must contain these settings:
+#. Configure the EFI firmware to boot the ACRN hypervisor by default
+
+   The ACRN hypervisor (``acrn.efi``) is an EFI executable that is meant to be
+   loaded directly by the platform EFI firmware. It then in turns loads the
+   Service OS bootloader. We use the ``efibootmgr`` utility to configure the EFI
+   firmware and add a new entry that loads the ACRN hypervisor.
+
+   .. code-block:: none
+
+      # efibootmgr -c -l "\EFI\acrn\acrn.efi" -d /dev/sda1 -p 1 -L ACRN
+      # cd /mnt/EFI/org.clearlinux/
+      # cp bootloaderx64.efi bootloaderx64_origin.efi
+
+#. Create a boot entry for the ACRN Service OS. It must contain these settings:
 
    +-----------+----------------------------------------------------------------+
    | Setting   | Description                                                    |
    +===========+================================================================+
    | title     | Text to show in the boot menu                                  |
    +-----------+----------------------------------------------------------------+
-   | efi       | Executable EFI image                                           |
+   | linux     | Linux kernel for the Service OS (*-sos)                        |
    +-----------+----------------------------------------------------------------+
-   | options   | Options to pass to the EFI program or kernel boot parameters   |
+   | options   | Options to pass to the Service OS kernel (kernel parameters)   |
    +-----------+----------------------------------------------------------------+
 
    A sample `acrn.conf
@@ -172,31 +186,32 @@ partition. Follow these steps:
 
       # cp /usr/share/acrn/demo/acrn.conf /mnt/loader/entries/
 
-   If you're following
-   the instructions above, the partition (``root=/dev/sda3``) and image
-   locations used in the ``arcn.conf`` file will match.
-
-   .. note::
-      Please make sure that the kernel version and root filesystem image (``clear-<version>-kvm.img``)
-      match your set-up.
+   You will need to edit this file to adjust the kernel version (``linux`` section)
+   and also insert the ``PARTUUID`` of your ``/dev/sda3`` partition
+   (``root=PARTUUID=<><UUID of rootfs partition>``) in the ``options`` section.
+   Use ``blkid`` to find out what your ``PARTUUID`` value is.
 
 #. Add a timeout period for Systemd-Boot to wait, otherwise it will not
    present the boot menu and will always boot the base Clear Linux
-   kernel.
+
+   .. code-block:: none
+
+      # cp /usr/share/acrn/demo/acrn.conf /mnt/loader/entries/
+
 
    .. code-block:: none
 
       # clr-boot-manager set-timeout 20
       # clr-boot-manager update
 
-#. Reboot and select "The ACRN Hypervisor" to boot, as shown in
+#. Reboot and select "The ACRN Service OS" to boot, as shown in
    :numref:`gsg-bootmenu`:
 
    .. figure:: images/gsg-bootmenu.png
       :align: center
       :name: gsg-bootmenu
 
-      ACRN Hypervisor Boot menu
+      ACRN Service OS Boot menu
 
 #. After booting up the ACRN hypervisor, the Service OS will be launched
    automatically by default, as shown in :numref:`gsg-sos-console`:
@@ -244,7 +259,7 @@ Set up Reference UOS
 
    .. code-block:: none
 
-      # curl -O https://download.clearlinux.org/releases/21260/clear/clear-21260-kvm.img.xz
+      # curl -O https://download.clearlinux.org/releases/22140/clear/clear-22140-kvm.img.xz
 
    .. note::
       In case you want to use or try out a newer version of Clear Linux as the UOS, you can
@@ -255,16 +270,16 @@ Set up Reference UOS
 
    .. code-block:: none
 
-      # unxz clear-21260-kvm.img.xz
+      # unxz clear-22140-kvm.img.xz
 
 #. Deploy the UOS kernel modules to UOS virtual disk image
 
    .. code-block:: none
 
-      # losetup -f -P --show /root/clear-21260-kvm.img
+      # losetup -f -P --show /root/clear-22140-kvm.img
       # ls /dev/loop0*
       # mount /dev/loop0p3 /mnt
-      # cp -r /usr/lib/modules/4.14.23-19.pk414-standard /mnt/lib/modules/
+      # cp -r /usr/lib/modules/4.14.34-27.pk414-standard /mnt/lib/modules/
       # umount /mnt
       # sync
 
@@ -282,7 +297,7 @@ Set up Reference UOS
 
    .. note::
       In case you have downloaded a different Clear Linux image than the one above
-      (``clear-21260-kvm.img.xz``), you will need to modify the Clear Linux file name
+      (``clear-22140-kvm.img.xz``), you will need to modify the Clear Linux file name
       and version number highlighted above (the ``-s 3,virtio-blk`` argument) to match
       what you have downloaded above. Likewise, you may need to adjust the kernel file
       name on the second line highlighted (check the exact name to be used using:
